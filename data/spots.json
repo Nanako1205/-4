@@ -1,2 +1,13 @@
-
-const res = await fetch('/-4/data/spots.json', { cache: 'no-cache' });
+<script>
+  async function start(){
+    // …前略…
+    // ★ここだけ絶対パスに（コピペOK）
+    const res = await fetch('https://nanako1205.github.io/-4/data/spots.json?ts=' + Date.now(), {
+      cache: 'no-store'
+    });
+    if (!res.ok) { console.log('HTTP ' + res.status); return; }
+    const spots = await res.json();
+    console.log('spots 件数:', spots.length);
+    // …後略（ジオコーディング処理）…
+  }
+</script>
