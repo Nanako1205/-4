@@ -1,1 +1,31 @@
 
+body {
+  margin: 0;
+  font-family: sans-serif;
+}
+
+header {
+  background: #c62828;
+  color: white;
+  padding: 16px;
+  text-align: center;
+}
+
+#map {
+  width: 100%;
+  height: 80vh; /* ← 地図が表示されるために必須 */
+}
+
+#card {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: white;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.hidden {
+  display: none;
+}
