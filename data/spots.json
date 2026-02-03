@@ -1,1 +1,2 @@
 
+const res = await fetch('/-4/data/spots.json', { cache: 'no-cache' });
