@@ -1,1 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>高知・御朱印マップ</title>
 
+  <!-- Leaflet 読み込み -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+  </script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header>
+  <h1>高知・御朱印マップ</h1>
+  <p>集めるのは、印よりも記憶。</p>
+</header>
+
+<!-- 地図を表示する領域 -->
+<div id="map"></div>
+
+<!-- 神社カード -->
+<div id="card" class="hidden">
+  <h2 id="shrine-name"></h2>
+  <p id="goshuin-type"></p>
+  <p id="memo"></p>
+  <button id="visited-btn">参拝済みにする</button>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
