@@ -1,1 +1,215 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>未確定スポットの手動補完ツール</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .wrap { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
+    aside { border-right: 1px solid #ddd; padding: 12px; overflow: auto; }
+    #map { height: 100%; }
+    h1 { font-size: 16px; margin: 0 0 8px; }
+    .small { font-size: 12px; opacity: .85; }
+    .item { padding: 8px; margin: 6px 0; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; background: #fafafa; }
+    .item.active { outline: 2px solid #2e7d32; }
+    .badge { display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 10px; background: #eee; margin-left: 6px; }
+    label { display:block; font-size: 12px; margin: 8px 0 4px; }
+    input[type="text"], textarea { width: 100%; box-sizing: border-box; padding: 6px; }
+    .btn { padding: 8px 10px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: #f7f7f7; }
+    .btn.primary { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+    .row { display:flex; gap:6px; align-items:center; }
+    .muted { color:#666; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <aside>
+      <h1>未確定スポット 補完</h1>
+      <p class="small">
+        使い方：左のリストから1件選ぶ → 右の地図を<b>1クリック</b>で位置を決定 → 必要なら名称/住所/メモも編集 → 「1件反映」 → すべて終わったら「更新ファイルをダウンロード」 → <code>/data/spots_geocoded.json</code> を置き換え。
+      </p>
+      <div id="summary" class="small">読み込み中…</div>
 
+      <div class="row" style="margin:10px 0;">
+        <button id="downloadAll" class="btn primary">更新ファイルをダウンロード</button>
+        <button id="resetSel" class="btn">選択解除</button>
+      </div>
+
+      <div id="form" style="display:none; margin-bottom:10px;">
+        <label>名称</label><input id="f_name" type="text">
+        <label>住所</label><input id="f_addr" type="text">
+        <label>タイプ（任意：神社/寺）</label><input id="f_type" type="text" placeholder="例：神社 / 寺">
+        <label>メモ（任意）</label><textarea id="f_memo" rows="2"></textarea>
+        <label>緯度 / 経度 <span class="muted small">（地図をクリックすると自動入力）</span></label>
+        <div class="row">
+          <input id="f_lat" type="text" placeholder="lat">
+          <input id="f_lng" type="text" placeholder="lng">
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button id="applyOne" class="btn primary">この1件を反映</button>
+          <button id="clearPos" class="btn">位置をクリア</button>
+        </div>
+      </div>
+
+      <h2 style="font-size:14px; margin:10px 0 6px;">未確定リスト</h2>
+      <div id="list"></div>
+
+      <h2 style="font-size:14px; margin:10px 0 6px;">確定済み（参考・最大50件）</h2>
+      <div id="oklist" class="small"></div>
+    </aside>
+
+    <div id="map"></div>
+  </div>
+
+<script>
+  // ---- 便利関数 ----
+  const $ = (id) => document.getElementById(id);
+  const summaryEl = $('summary'), listEl = $('list'), oklistEl = $('oklist'), formEl = $('form');
+  const f_name = $('f_name'), f_addr = $('f_addr'), f_type = $('f_type'), f_memo = $('f_memo');
+  const f_lat  = $('f_lat'),  f_lng  = $('f_lng');
+
+  // ---- 地図初期化（高知周辺）----
+  const map = L.map('map').setView([33.5589, 133.5311], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  let tempMarker = null;
+
+  map.on('click', (e) => {
+    if (selection == null) return;
+    const { lat, lng } = e.latlng;
+    f_lat.value = lat.toFixed(6);
+    f_lng.value = lng.toFixed(6);
+    if (tempMarker) tempMarker.remove();
+    tempMarker = L.marker([lat, lng]).addTo(map).bindPopup('仮位置').openPopup();
+  });
+
+  $('clearPos').onclick = () => {
+    f_lat.value = ''; f_lng.value = '';
+    if (tempMarker) { tempMarker.remove(); tempMarker = null; }
+  };
+
+  // ---- データ ----
+  let workSpots = [];      // 作業用（最終的にダウンロード）
+  let selection = null;    // 選択中index（workSpotsのindex）
+
+  async function loadJSON(url) {
+    const r = await fetch(url + '?ts=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  // 1) geocoded を優先、なければ住所だけから空の座標で作る
+  async function initData() {
+    let baseOnly = await loadJSON('/-4/data/spots.json').catch(() => []);
+    let geocoded = await loadJSON('/-4/data/spots_geocoded.json').catch(() => []);
+    if (Array.isArray(geocoded) && geocoded.length) {
+      workSpots = geocoded.map((s, idx) => ({ ...s, _idx: idx }));
+      // 住所だけのファイルにある新規行を補完（name一致でない場合は追加）
+      baseOnly.forEach(b => {
+        if (!workSpots.some(w => w.name === b.name)) {
+          workSpots.push({ ...b, lat: null, lng: null, _idx: workSpots.length });
+        }
+      });
+    } else {
+      workSpots = baseOnly.map((s, idx) => ({ ...s, lat: null, lng: null, _idx: idx }));
+    }
+  }
+
+  function render() {
+    const missing = workSpots.filter(s => !(Number.isFinite(+s.lat) && Number.isFinite(+s.lng)));
+    const ok      = workSpots.filter(s =>  (Number.isFinite(+s.lat) && Number.isFinite(+s.lng)));
+    summaryEl.textContent = `未確定: ${missing.length} 件 / 確定: ${ok.length} 件 / 合計: ${workSpots.length} 件`;
+
+    // 未確定リスト
+    listEl.innerHTML = '';
+    missing.forEach((s) => {
+      const div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = `<strong>${s.name || '名称未設定'}</strong><span class="badge">未確定</span><br><span class="small">${s.address || ''}</span>`;
+      div.onclick = () => selectByName(s.name);
+      listEl.appendChild(div);
+    });
+
+    // 参考（確定済みは最大50件表示）
+    oklistEl.innerHTML = ok.slice(0,50).map(s =>
+      `・${s.name || '名称未設定'}（${(s.lat+'').slice(0,8)}, ${(s.lng+'').slice(0,8)}）`
+    ).join('\n');
+  }
+
+  function selectByName(name) {
+    const i = workSpots.findIndex(s => s.name === name);
+    if (i < 0) return;
+    selection = i;
+    const s = workSpots[i];
+    formEl.style.display = 'block';
+    f_name.value = s.name || '';
+    f_addr.value = s.address || '';
+    f_type.value = s.type || '';
+    f_memo.value = s.memo || '';
+    f_lat.value  = Number.isFinite(+s.lat) ? (+s.lat).toFixed(6) : '';
+    f_lng.value  = Number.isFinite(+s.lng) ? (+s.lng).toFixed(6) : '';
+
+    const center = Number.isFinite(+s.lat) && Number.isFinite(+s.lng)
+      ? [ +s.lat, +s.lng ] : [33.5589, 133.5311];
+    map.setView(center, 12);
+    if (tempMarker) { tempMarker.remove(); tempMarker = null; }
+    if (Number.isFinite(+s.lat) && Number.isFinite(+s.lng)) {
+      tempMarker = L.marker(center).addTo(map).bindPopup('現在位置').openPopup();
+    }
+
+    // 左側のハイライト更新
+    [...document.querySelectorAll('.item')].forEach(el => {
+      const t = el.querySelector('strong')?.textContent || '';
+      el.classList.toggle('active', t === (s.name || ''));
+    });
+  }
+
+  $('applyOne').onclick = () => {
+    if (selection == null) return;
+    const s = workSpots[selection];
+    s.name    = f_name.value.trim();
+    s.address = f_addr.value.trim();
+    s.type    = f_type.value.trim() || undefined;
+    s.memo    = f_memo.value.trim() || undefined;
+    s.lat     = f_lat.value ? +f_lat.value : null;
+    s.lng     = f_lng.value ? +f_lng.value : null;
+    // ハイライト解除
+    selection = null; formEl.style.display = 'none';
+    if (tempMarker) { tempMarker.remove(); tempMarker = null; }
+    render();
+  };
+
+  $('resetSel').onclick = () => {
+    selection = null; formEl.style.display = 'none';
+    if (tempMarker) { tempMarker.remove(); tempMarker = null; }
+    [...document.querySelectorAll('.item')].forEach(el => el.classList.remove('active'));
+  };
+
+  $('downloadAll').onclick = () => {
+    const blob = new Blob([JSON.stringify(workSpots, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'spots_geocoded.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  // 初期化
+  (async () => {
+    try {
+      await initData();
+      render();
+    } catch (e) {
+      summaryEl.textContent = '読み込みエラー：' + e.message;
+    }
+  })();
+</script>
+</body>
+</html>
