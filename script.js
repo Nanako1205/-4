@@ -1,4 +1,4 @@
-// script.js（寺=赤／神社=緑、カード連動、参拝済み記録＋ポップアップで即保存＋URLリンク）
+// script.js（寺=赤／神社=緑、カード連動、参拝済み記録＋ポップアップで即保存＋URLリンク優先表示）
 
 document.addEventListener("DOMContentLoaded", () => {
   if (typeof L === "undefined") {
@@ -67,23 +67,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ---------------------------
      ポップアップのHTML
-     - 「save保存」を廃止（ラジオ変更で即保存）
-     - URL があればリンクを表示（spot.url / spot.link）
+     - 公式URLがあればそれを表示
+     - 無ければ Google マップの URL を自動生成
+     - ラジオ変更で即保存（ボタン不要）
   --------------------------- */
   function buildPopupHtml(spot, isTemple) {
     const name = spot.name ?? "名称不明";
     const address = spot.address ?? "";
     const memo = spot.memo ?? "";
-    const url = spot.url ?? spot.link ?? ""; // データにあれば表示
+
+    // 公式URLがあれば優先
+    const officialUrl = spot.url ?? spot.link ?? "";
+
+    // 公式URLが無いときのフォールバック（lat/lng優先、なければ名称検索）
+    const fallbackMapUrl = (spot.lat && spot.lng)
+      ? `https://www.google.com/maps?q=${encodeURIComponent(spot.lat)},${encodeURIComponent(spot.lng)}`
+      : `https://www.google.com/maps/search/${encodeURIComponent(name)}`;
+
+    const linkToShow = officialUrl || fallbackMapUrl;
+    const linkLabel  = officialUrl ? "公式/参考サイトを開く ↗" : "Googleマップで場所を開く ↗";
+
     const current = isVisited(name) ? "visited" : "unvisited";
     const statusText = current === "visited" ? "✅参拝済み" : "未参拝";
-
-    // URL があれば外部リンクを表示（新規タブ）
-    const linkHtml = url
-      ? `<div style="margin-top:.35rem;">
-           ${encodeURI(url)}公式/参考サイトを開く ↗
-         </div>`
-      : "";
 
     return `
       <div class="visit-popup" data-name="${name}">
@@ -103,7 +108,9 @@ document.addEventListener("DOMContentLoaded", () => {
           </label>
         </div>
 
-        ${linkHtml}
+        <div style="margin-top:.35rem;">
+          ${linkLabel}
+        </div>
       </div>
     `;
   }
@@ -143,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
           syncCardButton(name);
         }
 
-        // ポップアップの表示を再生成（現在値＆URLリンク含む）
+        // ポップアップの表示を再生成（現在値＆リンク含む）
         marker.setPopupContent(buildPopupHtml(spot, isTemple));
         // setPopupContent後はDOMが作り直されるので、イベントを再付与
         setTimeout(() => wirePopupEvents(marker, spot, isTemple), 0);
@@ -168,13 +175,13 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        // 「寺」の判定（簡易）：名前に「寺」「寺院」が含まれる
-        const isTemple = /寺|寺院/.test(s.name ?? "");
+        // 「寺」の判定：明示 type を優先、なければ名称に「寺/寺院」
+        const isTemple = (s.type === "寺") || /寺|寺院/.test(s.name ?? "");
         const icon = isTemple ? iconRed : iconGreen;
 
         const m = L.marker([lat, lng], { icon }).addTo(group);
 
-        // ★ ポップアップ：フォームUI（ラジオ即保存＋URLリンク）に差し替え
+        // ★ ポップアップ：公式URL優先／無ければGoogleマップ
         m.bindPopup(buildPopupHtml(s, isTemple));
 
         // ポップアップが開いたら中のラジオへイベント配線
@@ -189,15 +196,10 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById("memo").textContent = s.memo ?? "";
 
           const btn = document.getElementById("visited-btn");
-          // ボタンはワンタップで参拝済みにするシンプル動作（再クリックで未参拝へ戻す仕様にしてもOK）
+          // カード側は「押したら参拝済みにする」のシンプル動作（戻したい場合は unmarkVisited を使って切替可能）
           syncCardButton(s.name ?? "");
           btn.onclick = () => {
-            if (isVisited(s.name ?? "")) {
-              // もし未参拝へ戻したい運用ならこちら
-              // unmarkVisited(s.name ?? "");
-              // ここでは「押したら参拝済みにする」の現行仕様を維持
-              return;
-            }
+            if (isVisited(s.name ?? "")) return; // 既に参拝済みなら何もしない（戻す運用にしたい場合はここを変更）
             markVisited(s.name ?? "");
             syncCardButton(s.name ?? "");
             // ポップアップが開いていれば内容も最新化
@@ -219,4 +221,3 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("データの読み込みに失敗しました: " + err.message);
     });
 });
-``
