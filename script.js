@@ -64,124 +64,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ポップアップの中身（未参拝/参拝済みのラジオ + 保存ボタン）
   function buildPopupHtml(spot, isTemple) {
-    const name = spot.name ?? "名称不明";
-    const address = spot.address ?? "";
-    const memo = spot.memo ?? "";
-    const current = isVisited(name) ? "visited" : "unvisited";
-    const statusText = current === "visited" ? "✅参拝済み" : "未参拝";
+  const name = spot.name ?? "名称不明";
+  const address = spot.address ?? "";
+  const memo = spot.memo ?? "";
+  const url = spot.url ?? spot.link ?? ""; // ← データに url or link があれば使う
+  const current = isVisited(name) ? "visited" : "unvisited";
+  const statusText = current === "visited" ? "✅参拝済み" : "未参拝";
 
-    return `
-      <div class="visit-popup" data-name="${name}">
-        <div class="title">${name}</div>
-        <small>${address}</small><br/>
-        <em>${memo}</em><br/>
-        <div style="margin-top:.35rem; color:#444;">現在: <strong>${statusText}</strong></div>
-        <div class="row">
-          <label style="display:block; margin:.25rem 0;">
-            <input type="radio" name="visit-${CSS.escape(name)}" value="unvisited" ${current === "unvisited" ? "checked" : ""}>
-            未参拝
-          </label>
-          <label style="display:block;">
-            <input type="radio" name="visit-${CSS.escape(name)}" value="visited" ${current === "visited" ? "checked" : ""}>
-            参拝済み
-          </label>
-        </div>
-        save保存</button>
+  // URL があればアンカー表示（target=_blank, rel=noopener）
+  const linkHtml = url
+    ? `<div style="margin-top:.35rem;">
+         <a href="${encodeURI(url)}" target="_blank" rel="noopener noreferrer">公式/参考サイトを開く ↗</a>
+       </div>`
+    : "";
+
+  return `
+    <div class="visit-popup" data-name="${name}">
+      <div class="title">${name}</div>
+      <small>${address}</small><br/>
+      <em>${memo}</em><br/>
+      <div style="margin-top:.35rem; color:#444;">現在: <strong>${statusText}</strong></div>
+
+      <div class="row" style="margin-top:.35rem;">
+        <label style="display:block; margin:.25rem 0;">
+          <input type="radio" name="visit-${CSS.escape(name)}" value="unvisited" ${current === "unvisited" ? "checked" : ""}>
+          未参拝
+        </label>
+        <label style="display:block;">
+          <input type="radio" name="visit-${CSS.escape(name)}" value="visited" ${current === "visited" ? "checked" : ""}>
+          参拝済み
+        </label>
       </div>
-    `;
-  }
 
-  // 開いているポップアップの「保存」ボタンにイベントを付与
-  function wirePopupEvents(marker, spot, isTemple) {
-    const popup = marker.getPopup();
-    const container = popup?.getElement?.();
-    if (!container) return;
-
-    const name = spot.name ?? "名称不明";
-    // 既存リスナ多重付与を避けるためにボタンをクローンして置換
-    const btn = container.querySelector('button[data-action="save"]');
-    if (!btn) return;
-    const freshBtn = btn.cloneNode(true);
-    btn.replaceWith(freshBtn);
-
-    freshBtn.addEventListener("click", () => {
-      // 選択された値を取得
-      const selected = container.querySelector(`input[name="visit-${CSS.escape(name)}"]:checked`);
-      const val = selected?.value === "visited" ? "visited" : "unvisited";
-
-      // 保存（名前ベース）
-      if (val === "visited") markVisited(name);
-      else unmarkVisited(name);
-
-      // 下部カードも同期（カードが同じスポットを表示中なら文言を更新）
-      const shownName = document.getElementById("shrine-name")?.textContent || "";
-      if (shownName === name) syncCardButton(name);
-
-      // ポップアップの内容を更新（現在値表示とラジオの状態を反映）
-      marker.setPopupContent(buildPopupHtml(spot, isTemple));
-      // setPopupContent後にボタンが差し替わるので、再度配線
-      setTimeout(() => wirePopupEvents(marker, spot, isTemple), 0);
-    });
-  }
-
-  const group = L.featureGroup().addTo(map);
-
-  // データ読み込み（キャッシュ無効化クエリを付与）
-  fetch("./data/spots_geocoded.json?ts=" + Date.now(), { cache: "no-store" })
-    .then((r) => {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
-    .then((spots) => {
-      spots.forEach((s) => {
-        const lat = Number(s.lat);
-        const lng = Number(s.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-          // ジオコーディング未取得などはスキップ
-          return;
-        }
-
-        // 「寺」の判定（簡易）：名前に「寺」「寺院」が含まれる
-        const isTemple = /寺|寺院/.test(s.name ?? "");
-        const icon = isTemple ? iconRed : iconGreen;
-
-        const m = L.marker([lat, lng], { icon }).addTo(group);
-
-        // ★ ポップアップ：フォームUIに差し替え
-        m.bindPopup(buildPopupHtml(s, isTemple));
-
-        // ポップアップが開いたら中の「保存」ボタンにイベント付与
-        m.on("popupopen", () => wirePopupEvents(m, s, isTemple));
-
-        // クリック時：下部カードに反映（既存の動きは維持）
-        m.on("click", () => {
-          const card = document.getElementById("card");
-          card.classList.remove("hidden");
-          document.getElementById("shrine-name").textContent = s.name ?? "";
-          document.getElementById("goshuin-type").textContent = isTemple ? "寺院" : "神社";
-          document.getElementById("memo").textContent = s.memo ?? "";
-
-          const btn = document.getElementById("visited-btn");
-          syncCardButton(s.name ?? "");
-          btn.onclick = () => {
-            markVisited(s.name ?? "");
-            syncCardButton(s.name ?? "");
-            // もしポップアップが開いていれば中身も最新化
-            if (m.isPopupOpen()) {
-              m.setPopupContent(buildPopupHtml(s, isTemple));
-              setTimeout(() => wirePopupEvents(m, s, isTemple), 0);
-            }
-          };
-        });
-      });
-
-      // 表示範囲を自動調整
-      if (group.getLayers().length) {
-        map.fitBounds(group.getBounds(), { padding: [20, 20] });
-      }
-    })
-    .catch((err) => {
-      console.error("geocodedデータ読み込みエラー:", err);
-      alert("データの読み込みに失敗しました: " + err.message);
-    });
-});
+      ${linkHtml}
+    </div>
+  `;
+}
