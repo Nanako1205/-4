@@ -109,7 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
 
         <div style="margin-top:.35rem;">
-          ${linkLabel}
+          <a href="${linkToShow}" target="_blank" rel="noopener noreferrer">${linkLabel}</a>
         </div>
       </div>
     `;
@@ -181,7 +181,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const m = L.marker([lat, lng], { icon }).addTo(group);
 
-        // ★ ポップアップ：公式URL優先／無ければGoogleマップ
+        // ★ ポップアップ：公式URL優先／無ければGoogleマップ（アンカー要素で表示）
         m.bindPopup(buildPopupHtml(s, isTemple));
 
         // ポップアップが開いたら中のラジオへイベント配線
