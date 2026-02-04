@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>高知・御朱印マップ</title>
 
-  <!-- Leaflet 読み込み -->
+  <!-- Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -14,74 +14,36 @@
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
   </script>
 
-  <link rel="stylesheet" href="style.css">
+  <!-- 既存のスタイル -->
+  <link rel="stylesheet" href="style.css"/>
+
+  <!-- ポップアップ内フォームの軽い整形（任意） -->
+  <style>
+    .visit-popup { min-width: 200px; font-size: 14px; }
+    .visit-popup .title { font-weight: 600; margin-bottom: .35rem; }
+    .visit-popup .row { margin: .35rem 0; }
+    .visit-popup button { width: 100%; padding: .45rem .6rem; }
+  </style>
 </head>
 
 <body>
+  <header>
+    <h1>高知・御朱印マップ</h1>
+    <p>集めるのは、印よりも記憶。</p>
+  </header>
 
-<header>
-  <h1>高知・御朱印マップ</h1>
-  <p>集めるのは、印よりも記憶。</p>
-</header>
+  <!-- 地図領域 -->
+  <div id="map"></div>
 
-<!-- 地図を表示する領域 -->
-<div id="map"></div>
+  <!-- 下部の神社カード（既存） -->
+  <div id="card" class="hidden">
+    <h2 id="shrine-name"></h2>
+    <p id="goshuin-type"></p>
+    <p id="memo"></p>
+    <button id="visited-btn">参拝済みにする</button>
+  </div>
 
-<!-- 神社カード -->
-<div id="card" class="hidden">
-  <h2 id="shrine-name"></h2>
-  <p id="goshuin-type"></p>
-  <p id="memo"></p>
-  <button id="visited-btn">参拝済みにする</button>
-</div>
-
-  // 例：既存の marker がある前提
-// marker は L.marker(...).bindPopup('...').addTo(map) などで作られているもの
-
-// 1) 現在のステータス（任意の取得ロジックに置き換え）
-const id = marker.options.id ?? 'spot-001'; // ユニークIDを options に入れていればそれを利用
-const STORAGE_KEY = 'visit_status_v1';
-const statusMap = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-const currentStatus = statusMap[id] || 'unvisited';
-
-// 2) ポップアップの HTML を組み立てて "差し替え"
-function popupHtml(current) {
-  return `
-    <div class="visit-popup" data-id="${id}" style="min-width:180px">
-      <div class="title" style="font-weight:600;margin-bottom:.35rem">${marker.options.title ?? 'スポット'}</div>
-      <div class="row" style="margin:.35rem 0">
-        <label><input type="radio" name="visit-${id}" value="unvisited" ${current==='unvisited'?'checked':''}> 未参拝</label><br>
-        <label><input type="radio" name="visit-${id}" value="visited"   ${current==='visited'  ?'checked':''}> 参拝済み</label>
-      </div>
-      <button type="button" data-action="save" style="width:100%">保存</button>
-    </div>
-  `;
-}
-
-marker.setPopupContent(popupHtml(currentStatus)); // ← 中身を置き換える（LeafletのAPIでOK） [1](https://note.com/oto_wan_ai/n/n4843cebda021)
-
-// 3) ポップアップが開いたときに内部の「保存」ボタンへイベントを付与
-marker.on('popupopen', (e) => {
-  const el = e.popup.getElement();
-  if (!el) return;
-
-  const btn = el.querySelector('button[data-action="save"]');
-  btn?.addEventListener('click', () => {
-    const checked = el.querySelector(`input[name="visit-${id}"]:checked`);
-    const val = checked?.value === 'visited' ? 'visited' : 'unvisited';
-
-    // 保存（localStorage 例。別の保存先があればここを差し替え）
-    statusMap[id] = val;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(statusMap));
-
-    // 必要ならアイコン変更
-    // marker.setIcon(val==='visited' ? visitedIcon : unvisitedIcon);
-
-    // ポップアップの選択状態も最新に更新
-    marker.setPopupContent(popupHtml(val));
-  }, { once: true }); // 連打対策。必要なければ削除
-});
-``
-<script src="script.js"></script>
+  <!-- アプリ本体 -->
+  <script src="script.js"></script>
 </body>
 </html>
